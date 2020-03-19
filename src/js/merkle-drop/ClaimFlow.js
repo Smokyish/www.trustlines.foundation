@@ -22,6 +22,7 @@ import { useChainState } from "./state/chainState"
 import ColumnsWrapper from "./components/ColumnsWrapper"
 import ManualProofWrapper from "./components/ManualProofWrapper"
 import { useAccount } from "./state/account"
+import Warning from "./components/Warning"
 
 const STATE = {
   INPUT: "input",
@@ -41,6 +42,7 @@ function ClaimFlow() {
   const [proof, setProof] = useState([])
   const [currentClaimAmount, setCurrentClaimAmount] = useState("")
   const [originalClaimAmount, setOriginalClaimAmount] = useState("")
+  const [claimedAmount, setClaimedAmount] = useState("")
   const web3Account = useAccount()
   const chainState = useChainState()
   const [txHash, setTxHash] = useState("")
@@ -66,21 +68,35 @@ function ClaimFlow() {
     setInternalState(STATE.CLAIM_WAIT)
   }, [])
 
-  const handleConfirmation = useCallback((confirmationNumber, receipt) => {
-    // Workaround to access current hash
-    setTxHash(currentHash => {
-      // Only process incoming confirmations if it is about current transaction
-      if (receipt.transactionHash === currentHash) {
-        if (
-          confirmationNumber === parseInt(process.env.REACT_APP_CONFIRMATIONS)
-        ) {
-          setInternalState(STATE.CLAIM_END)
+  const setClaimedAmountByReceipt = useCallback(
+    async receipt => {
+      const claimedTokenAmountByReceipt = await web3.getClaimedTokenAmountByReceipt(
+        receipt
+      )
+      setClaimedAmount(claimedTokenAmountByReceipt)
+    },
+    [setClaimedAmount]
+  )
+
+  const handleConfirmation = useCallback(
+    (confirmationNumber, receipt) => {
+      // Workaround to access current hash
+      setTxHash(currentHash => {
+        // Only process incoming confirmations if it is about current transaction
+        if (receipt.transactionHash === currentHash) {
+          if (
+            confirmationNumber === parseInt(process.env.REACT_APP_CONFIRMATIONS)
+          ) {
+            setInternalState(STATE.CLAIM_END)
+            setClaimedAmountByReceipt(receipt)
+          }
+          setConfirmations(confirmationNumber)
         }
-        setConfirmations(confirmationNumber)
-      }
-      return currentHash
-    })
-  }, [])
+        return currentHash
+      })
+    },
+    [setClaimedAmountByReceipt]
+  )
 
   const submit = useCallback(address => {
     setInternalState(STATE.LOADING)
@@ -256,14 +272,15 @@ function ClaimFlow() {
         <div>
           <Headline />
           <ColumnsWrapper headline={"Check address eligibility"}>
-            <AddressDisplay address={claimAddress} />
-            <div className="box has-text-centered">
-              <h6 className="subtitle is-6 has-text-danger has-text-weight-semibold">
-                <span className="icon is-medium has-text-danger">
-                  <i className="fas fa-lg fa-exclamation-triangle" />
-                </span>
-                &nbsp;Sorry, this address is not eligible to claim any tokens.
-              </h6>
+            <div className="columns is-centered">
+              <div className="column">
+                <AddressDisplay address={claimAddress} />
+              </div>
+            </div>
+            <div className="columns is-centered">
+              <div className="column">
+                <Warning message="Sorry, this address is not eligible to claim any tokens." />
+              </div>
             </div>
             <div className="columns is-centered">
               <div className="column is-three-fifths">
@@ -278,24 +295,28 @@ function ClaimFlow() {
         <div>
           <Headline />
           <ColumnsWrapper headline={"Check address eligibility"}>
-            <AddressDisplay address={claimAddress} />
-          </ColumnsWrapper>
-          <ColumnsWrapper>
-            <ClaimAmount
-              proof={proof}
-              currentAmount={currentClaimAmount}
-              originalAmount={originalClaimAmount}
-              onClaim={handleClaimRequest}
-              reset={reset}
-              chainState={chainState}
-              wrongAccount={wrongAccountSelected}
-            />
-            {showTermsAndConditionsModal && (
-              <TermsAndConditionsModal
-                onReject={handleDeclineTermsAndCondition}
-                onAccept={onAcceptTermsAndCondition}
+            <div className="columns is-centered">
+              <div className="column">
+                <AddressDisplay address={claimAddress} />
+              </div>
+            </div>
+            <div className="columns is-centered">
+              <ClaimAmount
+                proof={proof}
+                currentAmount={currentClaimAmount}
+                originalAmount={originalClaimAmount}
+                onClaim={handleClaimRequest}
+                reset={reset}
+                chainState={chainState}
+                wrongAccount={wrongAccountSelected}
               />
-            )}
+              {showTermsAndConditionsModal && (
+                <TermsAndConditionsModal
+                  onReject={handleDeclineTermsAndCondition}
+                  onAccept={onAcceptTermsAndCondition}
+                />
+              )}
+            </div>
           </ColumnsWrapper>
           <ManualProofWrapper
             proof={proof}
@@ -324,7 +345,11 @@ function ClaimFlow() {
       return (
         <div className="columns is-centered">
           <div className="column is-three-fifths">
-            <ClaimSuccess txHash={txHash} confirmations={confirmations} />
+            <ClaimSuccess
+              txHash={txHash}
+              confirmations={confirmations}
+              amount={claimedAmount}
+            />
             <div className="columns is-centered">
               <div className="column is-three-fifths">
                 <RetryButton reset={reset} />
